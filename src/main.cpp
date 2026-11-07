@@ -149,11 +149,18 @@ public:
         // 在输入区，绑定词条输入框的变化信号
         entry_text_.signal_changed().connect(sigc::mem_fun(*this, &MyWindow::on_entry_text_changed));
         // 让三个输入框在按下回车时，都触发添加按钮的点击事件
-        entry_text_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
-        entry_code_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
-        entry_weight_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+        // entry_text_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+        // entry_code_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+        // entry_weight_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+
+        // 删掉之前的 signal_activate 绑定，改为监听按键事件
+        entry_text_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
+        entry_code_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
+        entry_weight_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
 
         btn_add_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+        btn_deploy_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_deploy_clicked));
+        btn_add_deploy_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_deploy_clicked));
     }
 
     void init()
@@ -304,6 +311,27 @@ protected:
         return true;
     }
 
+    bool on_entry_key_press(GdkEventKey* event) {
+        // 判断是否是回车键 (主键盘回车 或 小键盘回车)
+        if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
+
+            // 检查是否同时按下了 Ctrl 键
+            if ((event->state & GDK_CONTROL_MASK) != 0) {
+                // Ctrl + Enter：触发添加并部署，然后关闭窗口
+                on_btn_add_deploy_clicked(); // 假设你有这个函数
+                hide();                      // 关闭窗口
+            } else {
+                // 纯 Enter：仅触发添加
+                on_btn_add_clicked();
+            }
+
+            return true; // 返回 true，告诉系统“这个按键我已经处理了，不要再往下传了”
+        }
+
+        // 其他按键交给系统默认处理（比如输入字母、数字）
+        return false;
+    }
+
     void on_btn_add_clicked()
     {
         // 1. 获取输入框的内容
@@ -358,27 +386,34 @@ protected:
             // 把焦点移回词条输入框，方便下次快速输入
             entry_text_.grab_focus();
 
-            // 拼装命令：切换到工作目录并执行脚本
-            // 注意：一定要用 && 或者分号，确保先 cd 到正确的路径
-            std::string cmd = "./deploy.sh";
-
-            statusbar_.push("正在重新部署并同步 Git...", 0);
-
-            // 执行命令 (阻塞等待，直到脚本运行结束)
-            int result = std::system(cmd.c_str());
-
-            if (result == 0) {
-                statusbar_.push("部署与同步成功！", 0);
-                // 如果部署成功，可以顺便刷新一下内存里的词库
-                load_dict();
-            } else {
-                statusbar_.push("部署失败，请检查终端输出或脚本权限。", 0);
-            }
         }
         else
         {
             statusbar_.push("写入文件失败，请检查权限或路径！", 0);
         }
+    }
+    void on_btn_deploy_clicked()
+    {
+        std::string cmd = "./deploy.sh";
+
+        statusbar_.push("正在重新部署并同步 Git...", 0);
+
+        // 执行命令 (阻塞等待，直到脚本运行结束)
+        int result = std::system(cmd.c_str());
+
+        if (result == 0) {
+            statusbar_.push("部署与同步成功！", 0);
+            // 如果部署成功，可以顺便刷新一下内存里的词库
+            load_dict();
+        } else {
+            statusbar_.push("部署失败，请检查终端输出或脚本权限。", 0);
+        }
+    }
+
+    void on_btn_add_deploy_clicked()
+    {
+        on_btn_add_clicked();
+        on_btn_deploy_clicked();
     }
 
     // 修正编码栏
