@@ -9,7 +9,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 
 # 添加可执行文件
-add_executable(RimeDictHelperLinux main.cpp)
+add_executable(RimeDictHelperLinux src/main.cpp)
 
 # 包含头文件目录并链接库
 target_include_directories(RimeDictHelperLinux PRIVATE ${GTKMM_INCLUDE_DIRS})
