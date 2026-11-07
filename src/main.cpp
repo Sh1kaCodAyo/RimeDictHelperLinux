@@ -127,7 +127,7 @@ public:
 
         // ====== 5. 状态栏 ======
         main_box_v->pack_end(statusbar_, Gtk::PACK_SHRINK);
-
+        add_events(Gdk::KEY_PRESS_MASK);
         // 绑定事件
         bind_events(item_setworkspace, item_reloaddict, item_quit, item_about, item_website);
 
@@ -149,15 +149,12 @@ public:
 
         // 在输入区，绑定词条输入框的变化信号
         entry_text_.signal_changed().connect(sigc::mem_fun(*this, &MyWindow::on_entry_text_changed));
-        // 让三个输入框在按下回车时，都触发添加按钮的点击事件
-        // entry_text_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
-        // entry_code_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
-        // entry_weight_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_clicked));
+        // 在输入区，绑定回车键到添加按钮
+        entry_text_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_signal));
+        entry_code_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_signal));
+        entry_weight_.signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_signal));
 
-        // 删掉之前的 signal_activate 绑定，改为监听按键事件
-        entry_text_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
-        entry_code_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
-        entry_weight_.signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_entry_key_press));
+        signal_key_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_window_key_press));
 
         btn_add_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_signal));
         btn_deploy_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_deploy_clicked));
@@ -170,7 +167,6 @@ public:
         std::string saved_workspace = config_.get_value("workspace_path", "");
         if (!saved_workspace.empty())
         {
-            // TODO: 使用这个路径去加载词库
             // load_dict_from(saved_workspace);
             statusbar_.push("已加载工作目录: " + saved_workspace, 0);
             // 加载基本词库
@@ -191,6 +187,22 @@ public:
     }
 
 protected:
+    bool on_window_key_press(GdkEventKey* event)
+    {
+        // 判断是否按下了回车
+        if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter)
+        {
+            // 判断是否同时按下了 Ctrl
+            if ((event->state & GDK_CONTROL_MASK) != 0)
+            {
+                on_btn_add_deploy_clicked_par(true);
+                return true; // 拦截 Ctrl+Enter，防止继续传递
+            }
+        }
+        // 其他按键放行
+        return false;
+    }
+
     std::string generate_wubi_code(const Glib::ustring& text)
     {
         std::vector<std::string> chars_codes;
@@ -270,26 +282,6 @@ protected:
         // update_conflict_list(generated_code);
     }
 
-    // void on_btn_add_clicked()
-    // {
-    //     Glib::ustring text = entry_text_.get_text();
-    //     if (text.empty())
-    //     {
-    //         statusbar_.push("输入不能为空！", 0);
-    //         return;
-    //     }
-    //
-    //     // 往模型追加一行
-    //     auto row = *(list_store_->append());
-    //     row[columns_.col_text] = text;
-    //     row[columns_.col_code] = entry_code_.get_text();
-    //     row[columns_.col_weight] = 12;
-    //     row[columns_.col_source] = "基本";
-    //     row[columns_.col_linenumber] = 159;
-    //
-    //     statusbar_.push("已添加: " + text, 0);
-    //     tree_view_.scroll_to_row(list_store_->get_path(row), 0.0);
-    // }
     // 追加数据到文件末尾
     bool append_to_user_dict(const std::string& filepath, const std::string& text, const std::string& code, int weight)
     {
@@ -312,45 +304,29 @@ protected:
         return true;
     }
 
-    // bool on_entry_key_press(GdkEventKey* event) {
-    //     // 判断是否是回车键 (主键盘回车 或 小键盘回车)
-    //     if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
-    //
-    //         // 检查是否同时按下了 Ctrl 键
-    //         if ((event->state & GDK_CONTROL_MASK) != 0) {
-    //             // Ctrl + Enter：触发添加并部署，然后关闭窗口
-    //             on_btn_add_deploy_clicked_par(true); // 假设你有这个函数
-    //             // hide();                      // 关闭窗口
-    //         } else {
-    //             // 纯 Enter：仅触发添加
-    //             on_btn_add_clicked();
+    // bool on_entry_key_press(GdkEventKey* event)
+    // {
+    //     if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter)
+    //     {
+    //         // 如果按了 Ctrl+Enter
+    //         if ((event->state & GDK_CONTROL_MASK) != 0)
+    //         {
+    //             on_btn_add_deploy_clicked_par(true);
+    //         }
+    //         else
+    //         {
+    //             // 普通回车
+    //             // 这里直接调用添加，并忽略返回值（为了防止焦点失去）
+    //             on_btn_add_signal();
     //         }
     //
-    //         return true; // 返回 true，告诉系统“这个按键我已经处理了，不要再往下传了”
+    //         // 关键：如果你想在输入框为空时按回车不发声（不响叮咚声），返回 true。
+    //         // 为了确保输入法或系统不吞掉按键，建议在这里强行将焦点还给 text 框
+    //         entry_text_.grab_focus();
+    //         return true;
     //     }
-    //
-    //     // 其他按键交给系统默认处理（比如输入字母、数字）
     //     return false;
     // }
-    bool on_entry_key_press(GdkEventKey* event) {
-        if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
-
-            // 如果按了 Ctrl+Enter
-            if ((event->state & GDK_CONTROL_MASK) != 0) {
-                on_btn_add_deploy_clicked_par(true);
-            } else {
-                // 普通回车
-                // 这里直接调用添加，并忽略返回值（为了防止焦点失去）
-                on_btn_add_signal();
-            }
-
-            // 关键：如果你想在输入框为空时按回车不发声（不响叮咚声），返回 true。
-            // 为了确保输入法或系统不吞掉按键，建议在这里强行将焦点还给 text 框
-            entry_text_.grab_focus();
-            return true;
-        }
-        return false;
-    }
 
     bool on_btn_add_clicked()
     {
@@ -406,7 +382,6 @@ protected:
             // 把焦点移回词条输入框，方便下次快速输入
             entry_text_.grab_focus();
             return true;
-
         }
         else
         {
@@ -414,68 +389,43 @@ protected:
             return false;
         }
     }
+
     void on_btn_add_signal()
     {
         on_btn_add_clicked();
     }
+
     // 获取当前可执行文件所在的绝对路径
-    std::string get_current_dir() {
+    std::string get_current_dir()
+    {
         char result[PATH_MAX];
         ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-        if (count != -1) {
+        if (count != -1)
+        {
             std::string full_path(result, count);
             size_t pos = full_path.find_last_of('/');
-            if (pos != std::string::npos) {
+            if (pos != std::string::npos)
+            {
                 return full_path.substr(0, pos);
             }
         }
         return ".";
     }
+
     void on_btn_deploy_clicked()
     {
         on_btn_deploy_clicked_par(false);
     }
-    // 将部署逻辑放到后台线程
-    // void on_btn_deploy_clicked_par(bool close_after_deploy = false) {
-    //     std::string workspace = config_.get_value("workspace_path");
-    //     if (workspace.empty()) {
-    //         statusbar_.push("未设置工作目录！", 0);
-    //         return;
-    //     }
-    //
-    //     std::string exe_dir = get_current_dir();
-    //     std::string script_path = exe_dir + "/deploy.sh";
-    //     std::string cmd = "bash \"" + script_path + "\" \"" + workspace + "\"";
-    //
-    //     statusbar_.push("正在后台部署与同步...", 0);
-    //
-    //     // 启用后台线程执行命令！
-    //     std::thread([this, cmd, close_after_deploy]() {
-    //         int result = std::system(cmd.c_str());
-    //
-    //         // 命令执行完，必须切回主线程（UI线程）来更新界面或关闭窗口
-    //         Glib::signal_idle().connect_once([this, result, close_after_deploy]() {
-    //             if (result == 0) {
-    //                 statusbar_.push("部署与同步成功！", 0);
-    //                 load_dict(); // 重新加载数据
-    //             } else {
-    //                 statusbar_.push("部署失败，退出码: " + std::to_string(result), 0);
-    //             }
-    //
-    //             // 如果是 Ctrl+Enter 触发的，等脚本全跑完了，再安全关闭窗口
-    //             if (close_after_deploy) {
-    //                 hide();
-    //             }
-    //         });
-    //     }).detach(); // detach 让线程在后台自己跑完
-    // }
-    void on_btn_deploy_clicked_par(bool close_after_deploy = false) {
+
+    void on_btn_deploy_clicked_par(bool close_after_deploy = false)
+    {
         if (is_deploying_) return; // 如果正在部署，直接返回，防止连击
-        is_deploying_ = true;      // 上锁
+        is_deploying_ = true; // 上锁
 
 
         std::string workspace = config_.get_value("workspace_path");
-        if (workspace.empty()) {
+        if (workspace.empty())
+        {
             statusbar_.push("未设置工作目录！", 0);
             return;
         }
@@ -486,22 +436,29 @@ protected:
 
         statusbar_.push("正在后台部署与同步...", 0);
 
-        std::thread([this, cmd, close_after_deploy]() {
+        std::thread([this, cmd, close_after_deploy]()
+        {
             int result = std::system(cmd.c_str());
 
             // 切回主线程
-            Glib::signal_idle().connect_once([this, result, close_after_deploy]() {
-                if (result == 0) {
+            Glib::signal_idle().connect_once([this, result, close_after_deploy]()
+            {
+                if (result == 0)
+                {
                     statusbar_.push("部署与同步成功！", 0);
                     load_dict();
-                } else {
+                }
+                else
+                {
                     statusbar_.push("部署失败，退出码: " + std::to_string(result), 0);
                 }
 
                 // 【核心修复】如果是 Ctrl+Enter 触发的，不要立刻 hide
                 // 使用 timeout 延迟 100 毫秒再关闭，给底层进程回收留出时间
-                if (close_after_deploy) {
-                    Glib::signal_timeout().connect_once([this]() {
+                if (close_after_deploy)
+                {
+                    Glib::signal_timeout().connect_once([this]()
+                    {
                         hide();
                     }, 100); // 100 毫秒足以让 system 调用彻底清理完毕
                 }
@@ -513,7 +470,7 @@ protected:
     {
         on_btn_add_deploy_clicked_par(false);
     }
-    
+
     void on_btn_add_deploy_clicked_par(bool close_after_deploy = false)
     {
         // 只有添加成功（返回 true），才继续执行部署
