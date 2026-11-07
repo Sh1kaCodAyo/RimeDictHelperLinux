@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
 
 ConfigManager::ConfigManager(const std::string& filepath) : filepath_(filepath) {
     load(); // 创建对象时自动加载
@@ -41,6 +42,12 @@ void ConfigManager::load() {
 }
 
 void ConfigManager::save() {
+    // 自动创建父文件夹
+    std::filesystem::path path(filepath_);
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path());
+    }
+    // 然后写入文件
     std::ofstream file(filepath_);
     if (!file.is_open()) {
         std::cerr << "无法写入配置文件: " << filepath_ << std::endl;
