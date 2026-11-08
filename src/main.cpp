@@ -14,7 +14,13 @@ public:
     MyWindow() : config_(get_config_path())
     {
         // 窗口基本样式
-        // set_icon_from_file("RimeDictHelper2.png");
+        // 获取可执行文件当前所在的目录
+        std::string exe_dir = get_current_dir();
+        try {
+            set_icon_from_file(exe_dir + "/RimeDictHelper2.png");
+        } catch (const Glib::Error& ex) {
+            std::cerr << "图标加载失败: " << ex.what() << std::endl;
+        }
         set_title("RimeDictHelper for Linux");
         set_default_size(400, 400);
         set_border_width(10);
@@ -811,7 +817,7 @@ protected:
     {
         try
         {
-            Gio::AppInfo::launch_default_for_uri("https://github.com/Sh1kaCodAyo/RimeDictHelper2");
+            Gio::AppInfo::launch_default_for_uri("https://github.com/Sh1kaCodAyo/RimeDictHelperLinux");
         }
         catch (const Glib::Error& ex)
         {
@@ -882,6 +888,33 @@ private:
 int main(int argc, char* argv[])
 {
     auto app = Gtk::Application::create(argc, argv, "org.example.rimedicthelper");
+
+    Glib::set_prgname("rimedicthelper");
+    gdk_set_program_class("RimeDictHelper");
+
     MyWindow window;
     return app->run(window);
 }
+
+// int main(int argc, char* argv[]) {
+//     auto app = Gtk::Application::create(argc, argv, "org.example.rimedicthelper");
+//
+//     Glib::set_prgname("rimedicthelper");
+//     gdk_set_program_class("rimedicthelper"); // 注意这里全小写，和 .desktop 里的 Icon 匹配
+//
+//     MyWindow window;
+//
+//     // 【新增】：强行给 X11 窗口设置图标数据
+//     try {
+//         // 这里用绝对路径或者基于 get_current_dir() 都可以，确保能找到
+//         // 因为在开发时，运行目录可能是 cmake-build-debug，图片在 resource 下
+//         auto pixbuf = Gdk::Pixbuf::create_from_file("RimeDictHelper2.png");
+//         // 如果你之前在构造函数里已经成功用 set_icon_from_file 显示了窗口左上角图标，
+//         // 说明这个相对路径是找得到的。
+//         window.set_icon(pixbuf);
+//     } catch (const Glib::Error& ex) {
+//         std::cerr << "图标加载失败: " << ex.what() << std::endl;
+//     }
+//
+//     return app->run(window);
+// }

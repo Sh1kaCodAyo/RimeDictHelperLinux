@@ -28,3 +28,4 @@ configure_file(
         COPYONLY
 )
 execute_process(COMMAND chmod +x ${CMAKE_BINARY_DIR}/deploy.sh)
+file(COPY ${CMAKE_SOURCE_DIR}/resource/RimeDictHelper2.png DESTINATION ${CMAKE_BINARY_DIR})
