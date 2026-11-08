@@ -49,6 +49,8 @@ public:
     // 在头文件中只写声明
     void add_entry(const DictEntry& entry);
     const std::vector<DictEntry>* get_entries_by_code(const std::string& code);
+    bool delete_line_from_file(const std::string& filepath, int target_line);
+    bool update_weight_in_file(const std::string& filepath, int target_line, int new_weight) ;
 };
 
 extern bool load_dict_file(const std::string& filepath, DictSource source_type, DictDatabase& db);

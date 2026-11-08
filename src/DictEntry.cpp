@@ -108,3 +108,60 @@ bool load_dict_file(const std::string& filepath, DictSource source_type, DictDat
     std::cout << "成功加载 " << filepath << "，总计 " << db.code_to_entries.size() << " 个编码" << std::endl;
     return true;
 }
+// 删除文件指定行
+bool DictDatabase::delete_line_from_file(const std::string& filepath, int target_line) {
+    std::ifstream in(filepath);
+    if (!in.is_open()) return false;
+
+    std::vector<std::string> lines;
+    std::string line;
+    int current_line = 1;
+
+    while (std::getline(in, line)) {
+        if (current_line != target_line) {
+            lines.push_back(line);
+        }
+        current_line++;
+    }
+    in.close();
+
+    std::ofstream out(filepath);
+    if (!out.is_open()) return false;
+    for (const auto& l : lines) {
+        out << l << "\n";
+    }
+    return true;
+}
+
+// 修改文件指定行的权重
+bool DictDatabase::update_weight_in_file(const std::string& filepath, int target_line, int new_weight) {
+    std::ifstream in(filepath);
+    if (!in.is_open()) return false;
+
+    std::vector<std::string> lines;
+    std::string line;
+    int current_line = 1;
+
+    while (std::getline(in, line)) {
+        if (current_line == target_line) {
+            // 找到目标行，进行分割替换
+            std::stringstream ss(line);
+            std::string text, code, old_weight;
+            std::getline(ss, text, '\t');
+            std::getline(ss, code, '\t');
+
+            // 重新拼接新行
+            line = text + "\t" + code + "\t" + std::to_string(new_weight);
+        }
+        lines.push_back(line);
+        current_line++;
+    }
+    in.close();
+
+    std::ofstream out(filepath);
+    if (!out.is_open()) return false;
+    for (const auto& l : lines) {
+        out << l << "\n";
+    }
+    return true;
+}

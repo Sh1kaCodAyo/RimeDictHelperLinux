@@ -16,7 +16,7 @@ public:
         // 窗口基本样式
         // set_icon_from_file("RimeDictHelper2.png");
         set_title("RimeDictHelper for Linux");
-        set_default_size(400, 200);
+        set_default_size(400, 400);
         set_border_width(10);
         set_keep_above(true);
 
@@ -130,6 +130,29 @@ public:
         // 关键：让表格撑满中间区域
         main_box_v->pack_start(*scrolled, Gtk::PACK_EXPAND_WIDGET);
 
+        // ====== 添加右键菜单 ======
+        auto* item_edit_weight = Gtk::manage(new Gtk::MenuItem("修改权重"));
+        auto* item_delete = Gtk::manage(new Gtk::MenuItem("删除词条"));
+
+        // 绑定菜单项点击事件
+        item_edit_weight->signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_menu_edit_weight));
+        item_delete->signal_activate().connect(sigc::mem_fun(*this, &MyWindow::on_menu_delete));
+
+        // 把菜单项加入菜单
+        right_click_menu_.append(*item_edit_weight);
+        right_click_menu_.append(*item_delete);
+        right_click_menu_.show_all(); // 必须 show，否则不显示
+
+        // 允许 TreeView 接收鼠标点击事件
+        // tree_view_.add_events(Gdk::BUTTON_PRESS_MASK);
+        // tree_view_.signal_button_press_event().connect(sigc::mem_fun(*this, &MyWindow::on_tree_view_button_press));
+        tree_view_.add_events(Gdk::BUTTON_PRESS_MASK);
+        // 加上参数 false，表示在默认的信号处理（比如选中行）之前拦截事件
+        tree_view_.signal_button_press_event().connect([this](GdkEventButton* event)
+        {
+            return on_tree_view_button_press(event);
+        }, false);
+
         // ====== 5. 状态栏 ======
         main_box_v->pack_end(statusbar_, Gtk::PACK_SHRINK);
         add_events(Gdk::KEY_PRESS_MASK);
@@ -174,16 +197,13 @@ public:
         {
             // load_dict_from(saved_workspace);
             statusbar_.push("已加载工作目录: " + saved_workspace, 0);
-            // 加载基本词库
-            load_dict_file(saved_workspace + "/wubi86_jidian.dict.yaml", DictSource::BASE, db_);
-            // 加载用户词库
-            load_dict_file(saved_workspace + "/wubi86_jidian_user.dict.yaml", DictSource::USER, db_);
-
-            statusbar_.push("已读取词库，共" + std::to_string(db_.single_char_codes.size()) + "个单字", 0);
-            if (saved_workspace.find("rime4test") != std::string::npos)
-            {
-                set_title("RimeDictHelper for Linux [测试模式]");
-            }
+            load_dict();
+            // // 加载基本词库
+            // load_dict_file(saved_workspace + "/wubi86_jidian.dict.yaml", DictSource::BASE, db_);
+            // // 加载用户词库
+            // load_dict_file(saved_workspace + "/wubi86_jidian_user.dict.yaml", DictSource::USER, db_);
+            //
+            // statusbar_.push("已读取词库，共" + std::to_string(db_.single_char_codes.size()) + "个单字", 0);
         }
         else
         {
@@ -318,6 +338,136 @@ protected:
         }
     }
 
+    bool on_tree_view_button_press(GdkEventButton* event)
+    {
+        std::cout << "Button pressed: " << event->button << std::endl;
+        // 判断是否是鼠标右键按下（BUTTON3 是右键，BUTTON1 是左键）
+        if (event->type == GDK_BUTTON_PRESS && event->button == 3)
+        {
+            // 1. 根据鼠标点击坐标获取 TreeView 路径
+            Gtk::TreeModel::Path path;
+            Gtk::TreeViewColumn* column;
+            int cell_x, cell_y;
+            tree_view_.get_path_at_pos(
+                static_cast<int>(event->x), static_cast<int>(event->y),
+                path, column, cell_x, cell_y
+            );
+
+            // 如果没点到任何行，就不弹出菜单
+            if (!path) return false;
+
+            // 2. 选中该行
+            tree_view_.get_selection()->select(path);
+
+            // 3. 获取底层的 iterator（注意：因为加了 TreeModelSort，需要把 path 映射回底层模型）
+            // auto sort_model = std::dynamic_pointer_cast<Gtk::TreeModelSort>(tree_view_.get_model());
+            auto sort_model = Glib::RefPtr<Gtk::TreeModelSort>::cast_dynamic(tree_view_.get_model());
+            if (sort_model)
+            {
+                auto child_iter = sort_model->convert_iter_to_child_iter(sort_model->get_iter(path));
+                selected_iter_ = child_iter;
+            }
+            else
+            {
+                selected_iter_ = tree_view_.get_model()->get_iter(path);
+            }
+
+            // 4. 在鼠标位置弹出菜单
+            right_click_menu_.popup(event->button, event->time);
+            return true;
+        }
+        return false;
+    }
+
+    void on_menu_delete()
+    {
+        if (!selected_iter_) return;
+
+        auto row = *selected_iter_;
+        std::string word = (Glib::ustring)row[columns_.col_text];
+        std::string code = (Glib::ustring)row[columns_.col_code];
+        int line_number = row[columns_.col_linenumber];
+        std::string source_str = (Glib::ustring)row[columns_.col_source];
+
+        // 确认弹窗
+        Gtk::MessageDialog dialog(*this, "确认删除", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
+        dialog.set_secondary_text("确定要删除词条「" + word + "」吗？此操作不可撤销。");
+        int result = dialog.run();
+        if (result != Gtk::RESPONSE_OK) return;
+
+        // 决定去哪个文件删
+        std::string workspace = config_.get_value("workspace_path");
+        std::string filepath = workspace + (source_str == "基本"
+                                                ? "/wubi86_jidian.dict.yaml"
+                                                : "/wubi86_jidian_user.dict.yaml");
+
+        // 执行删除逻辑（文件行删除）
+        if (db_.delete_line_from_file(filepath, line_number))
+        {
+            statusbar_.push("已删除词条: " + word, 0);
+            // 重新加载内存数据并刷新列表
+            load_dict();
+            update_conflict_list(code);
+        }
+        else
+        {
+            statusbar_.push("删除失败！", 0);
+        }
+    }
+
+    void on_menu_edit_weight()
+    {
+        if (!selected_iter_) return;
+
+        auto row = *selected_iter_;
+        std::string word = (Glib::ustring)row[columns_.col_text];
+        std::string code = (Glib::ustring)row[columns_.col_code];
+        int old_weight = row[columns_.col_weight];
+        int line_number = row[columns_.col_linenumber];
+        std::string source_str = (Glib::ustring)row[columns_.col_source];
+
+        // 创建一个简单的对话框来输入新权重
+        Gtk::Dialog dialog("修改权重 - " + word, *this, true);
+        dialog.add_button("取消", Gtk::RESPONSE_CANCEL);
+        dialog.add_button("确定", Gtk::RESPONSE_OK);
+        dialog.set_default_response(Gtk::RESPONSE_OK);
+
+        auto* box = dialog.get_content_area();
+        auto* label = Gtk::manage(new Gtk::Label("请输入新的权重 (1-99):"));
+        auto* entry = Gtk::manage(new Gtk::Entry());
+        entry->set_text(std::to_string(old_weight));
+        entry->set_activates_default(true);
+
+        box->pack_start(*label, Gtk::PACK_SHRINK);
+        box->pack_start(*entry, Gtk::PACK_SHRINK);
+        dialog.show_all_children();
+
+        if (dialog.run() == Gtk::RESPONSE_OK)
+        {
+            std::string new_weight_str = entry->get_text();
+            int new_weight = 20;
+            try { new_weight = std::stoi(new_weight_str); }
+            catch (...) { return; }
+
+            std::string workspace = config_.get_value("workspace_path");
+            std::string filepath = workspace + (source_str == "基本"
+                                                    ? "/wubi86_jidian.dict.yaml"
+                                                    : "/wubi86_jidian_user.dict.yaml");
+
+            // 执行修改文件行逻辑
+            if (db_.update_weight_in_file(filepath, line_number, new_weight))
+            {
+                statusbar_.push("已修改词条「" + word + "」权重为: " + std::to_string(new_weight), 0);
+                load_dict();
+                update_conflict_list(code);
+            }
+            else
+            {
+                statusbar_.push("修改失败！", 0);
+            }
+        }
+    }
+
     // 追加数据到文件末尾
     bool append_to_user_dict(const std::string& filepath, const std::string& text, const std::string& code, int weight)
     {
@@ -417,6 +567,7 @@ protected:
 
             // 把焦点移回词条输入框，方便下次快速输入
             entry_text_.grab_focus();
+            load_dict();
             return true;
         }
         else
@@ -630,6 +781,17 @@ protected:
 
     void load_dict()
     {
+        std::string saved_workspace = config_.get_value("workspace_path", "");
+
+
+        db_.single_char_codes.clear();
+        db_.code_to_entries.clear();
+        // 加载基本词库
+        load_dict_file(saved_workspace + "/wubi86_jidian.dict.yaml", DictSource::BASE, db_);
+        // 加载用户词库
+        load_dict_file(saved_workspace + "/wubi86_jidian_user.dict.yaml", DictSource::USER, db_);
+
+        statusbar_.push("已读取词库，共" + std::to_string(db_.single_char_codes.size()) + "个单字", 0);
     }
 
     void on_menu_quit()
@@ -710,6 +872,9 @@ private:
     Glib::RefPtr<Gtk::ListStore> list_store_;
     Gtk::TreeView tree_view_;
     Glib::RefPtr<Gtk::TreeModelSort> sort_model_; // 新增排序模型（可选，但推荐存下来方便以后操作）
+
+    Gtk::Menu right_click_menu_; // 右键菜单本体
+    Gtk::TreeModel::iterator selected_iter_; // 记录当前右键点击选中的行
 
     Gtk::Statusbar statusbar_;
 };
