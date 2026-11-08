@@ -84,8 +84,13 @@ public:
 
 
         // ====== 4. 表格区 ======
+        // 1. 实例化成员变量 base_store
         list_store_ = Gtk::ListStore::create(columns_);
-        tree_view_.set_model(list_store_);
+        // 2. 创建排序模型，并绑定底层 ListStore
+        sort_model_ = Gtk::TreeModelSort::create(list_store_);
+        sort_model_->set_sort_column(columns_.col_weight, Gtk::SORT_DESCENDING);
+        // 3. 把排序模型交给 TreeView
+        tree_view_.set_model(sort_model_);
 
         // 1. 手动创建列对象，并绑定模型数据
         auto* col1 = Gtk::manage(new Gtk::TreeViewColumn("词条", columns_.col_text));
@@ -279,7 +284,38 @@ protected:
         entry_weight_.set_text("20");
 
         // 5. 实时更新右侧重码列表（伪代码）
-        // update_conflict_list(generated_code);
+        update_conflict_list(generated_code);
+    }
+
+    void update_conflict_list(const std::string& code)
+    {
+        // 1. 清空当前列表的所有行
+        list_store_->clear();
+
+        // 2. 如果没有编码，直接返回
+        if (code.empty()) return;
+
+        // 3. 去内存数据库查询是否有重码
+        auto* entries = db_.get_entries_by_code(code);
+        if (entries)
+        {
+            // 4. 遍历重码列表，逐行塞入 Model
+            for (const auto& entry : *entries)
+            {
+                // 在 ListStore 末尾追加一行，get_path(row) 可以拿到这一行的位置
+                auto row = *(list_store_->append());
+
+                // 把 DictEntry 的数据塞进对应的列
+                row[columns_.col_text] = entry.text;
+                row[columns_.col_code] = entry.code;
+                row[columns_.col_weight] = entry.weight;
+
+                // 把枚举转换为字符串显示
+                row[columns_.col_source] = (entry.source == DictSource::BASE) ? "基本" : "用户";
+
+                row[columns_.col_linenumber] = entry.line_number;
+            }
+        }
     }
 
     // 追加数据到文件末尾
@@ -496,7 +532,13 @@ protected:
             }
         }
 
-        if (text != filtered)
+        // 如果过滤后的文本没变（说明没有输入非法字符），则刷新列表
+        if (text == filtered)
+        {
+            // 注意把 Glib::ustring 转为 std::string 传进去
+            update_conflict_list(text);
+        }
+        else
         {
             int pos = entry_code_.get_position();
             entry_code_.set_text(filtered);
@@ -667,6 +709,7 @@ private:
     ModelColumns columns_;
     Glib::RefPtr<Gtk::ListStore> list_store_;
     Gtk::TreeView tree_view_;
+    Glib::RefPtr<Gtk::TreeModelSort> sort_model_; // 新增排序模型（可选，但推荐存下来方便以后操作）
 
     Gtk::Statusbar statusbar_;
 };
