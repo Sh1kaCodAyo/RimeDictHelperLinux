@@ -2,7 +2,7 @@
 
 # RimeDictHelper forLinux
 
-RimeDictHelper2的linux版本，功能和使用方法可参考[Windows版使用文档，功能相同。](https://github.com/Sh1kaCodAyo/RimeDictHelper2)此处提供编译指南
+RimeDictHelper2的linux版本，功能和使用方法可参考[Windows版使用文档，基本相同。](https://github.com/Sh1kaCodAyo/RimeDictHelper2)此处提供编译指南
 
 ## 🛠️ 编译与运行指南
 
