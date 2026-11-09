@@ -193,6 +193,11 @@ public:
         btn_add_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_signal));
         btn_deploy_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_deploy_clicked));
         btn_add_deploy_.signal_clicked().connect(sigc::mem_fun(*this, &MyWindow::on_btn_add_deploy_clicked));
+
+        // 初始化时禁用按钮，防止在加载词库时被点击
+        btn_add_.set_sensitive(false);
+        btn_deploy_.set_sensitive(false);
+        btn_add_deploy_.set_sensitive(false);
     }
 
     void init()
@@ -220,6 +225,11 @@ public:
 protected:
     bool on_window_key_press(GdkEventKey* event)
     {
+        // 如果还没初始化完成，直接拦截所有回车，什么都不做
+        if (!is_initialized_) {
+            return false;
+        }
+
         // 判断是否按下了回车
         if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter)
         {
@@ -565,15 +575,17 @@ protected:
         {
             statusbar_.push("已添加词条: " + text, 0);
 
-            // 5. 可选：写入成功后，立刻更新内存数据库和右侧列表
-            // 这里可以先往右侧列表插一行，或者直接调用重新加载词库的逻辑
-            // 最优解是直接构造 DictEntry 插入 db_，不过为了直观，这里先清空输入框
+            // 【优化】：只更新内存数据库，不重新读一遍几十万行的文件！
+            // 行号其实不用准，因为当你部署后，Rime 生效了，你下次重新启动程序就会重新读。
+            // 就算你马上点右键，因为这是刚添加的，直接给它个 -1 行号或者当前文件的最大行号都可以。
+            // 如果非要完美，可以传个 -1 代表它是新加的，禁止右键修改。
+            // 或者直接往 db_ 里塞：
+            DictEntry new_entry(text, code, weight, DictSource::USER, -1); // -1表示临时添加，不用于文件定位
+            db_.add_entry(new_entry);
+
             entry_text_.set_text("");
             entry_code_.set_text("");
-
-            // 把焦点移回词条输入框，方便下次快速输入
             entry_text_.grab_focus();
-            load_dict();
             return true;
         }
         else
@@ -620,6 +632,7 @@ protected:
         if (workspace.empty())
         {
             statusbar_.push("未设置工作目录！", 0);
+            is_deploying_ = false; // <--- 补上这行
             return;
         }
 
@@ -646,6 +659,8 @@ protected:
                     statusbar_.push("部署失败，退出码: " + std::to_string(result), 0);
                 }
 
+                is_deploying_ = false;
+
                 // 【核心修复】如果是 Ctrl+Enter 触发的，不要立刻 hide
                 // 使用 timeout 延迟 100 毫秒再关闭，给底层进程回收留出时间
                 if (close_after_deploy)
@@ -653,7 +668,7 @@ protected:
                     Glib::signal_timeout().connect_once([this]()
                     {
                         hide();
-                    }, 100); // 100 毫秒足以让 system 调用彻底清理完毕
+                    }, 1000);
                 }
             });
         }).detach();
@@ -798,6 +813,15 @@ protected:
         load_dict_file(saved_workspace + "/wubi86_jidian_user.dict.yaml", DictSource::USER, db_);
 
         statusbar_.push("已读取词库，共" + std::to_string(db_.single_char_codes.size()) + "个单字", 0);
+
+        // 【新增】加载完毕，解锁按钮
+        is_initialized_ = true;
+        btn_add_.set_sensitive(true);
+        btn_deploy_.set_sensitive(true);
+        btn_add_deploy_.set_sensitive(true);
+
+        // 顺便把焦点给输入框
+        entry_text_.grab_focus();
     }
 
     void on_menu_quit()
@@ -836,7 +860,9 @@ private:
     Gtk::Button btn_deploy_;
     Gtk::Button btn_add_deploy_;
 
+    // 防抖处理
     bool is_deploying_ = false;
+    bool is_initialized_ = false;
 
     // 获取用户目录，并拼装配置路径
     std::string get_config_path()

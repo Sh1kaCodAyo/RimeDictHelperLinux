@@ -12,7 +12,7 @@ pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 add_executable(RimeDictHelperLinux src/main.cpp
         src/ConfigManager.h
         src/ConfigManager.cpp
-        src/AppData.h
+#        src/AppData.h
         src/DictEntry.h
         src/DictEntry.cpp)
 
@@ -29,3 +29,8 @@ configure_file(
 )
 execute_process(COMMAND chmod +x ${CMAKE_BINARY_DIR}/deploy.sh)
 file(COPY ${CMAKE_SOURCE_DIR}/resource/RimeDictHelper2.png DESTINATION ${CMAKE_BINARY_DIR})
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
+endif()
